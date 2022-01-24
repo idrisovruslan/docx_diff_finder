@@ -13,11 +13,15 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Comparator;
 
 @SpringBootApplication
 public class DocxDiffFinderApplication implements CommandLineRunner {
 
-    public Integer counter = 0;
+    private final String tempFolderString = "target/temp" + Calendar.getInstance().getTimeInMillis() + "/";
+    private final String srcFolderString = "src/main/resources/";
 
     public static void main(String[] args) {
         SpringApplication.run(DocxDiffFinderApplication.class, args);
@@ -25,73 +29,96 @@ public class DocxDiffFinderApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        createFolders();
 
-        File pdf1 = convertDocxToPdf("src/main/resources/src1.docx", "target/pdf1.pdf");
-        File pdf2 = convertDocxToPdf("src/main/resources/src2.docx", "target/pdf2.pdf");
+        File firstFolderWithImages = convertDocxToImages("src1.docx", "pdf1.pdf", "firstFile");
+        File secondFolderWithImages = convertDocxToImages("src2.docx", "pdf2.pdf", "secondFile");
 
-        File img1 = convertPdfToPng(pdf1, "target/firstFile");
-        File img2 = convertPdfToPng(pdf2, "target/secondFile");
-
-        getDifferenceImages(img1, img2);
-
-        System.out.println(counter);
+        getDifferenceImages(firstFolderWithImages, secondFolderWithImages);
     }
 
-    private File convertPdfToPng(File docPath, String pngPath) throws IOException {
-        PDDocument pd = PDDocument.load(docPath);
-        PDFRenderer pr = new PDFRenderer(pd);
-
-        if (!(new File(pngPath).exists())) {
-            new File(pngPath).mkdir();
-        }
-
-        for (int page = 0; page < pd.getNumberOfPages(); ++page) {
-            BufferedImage bi = pr.renderImageWithDPI(page, 300);
-            ImageIO.write (bi, "JPEG", new File(pngPath + "/" + page + ".png"));
-        }
-
-        return new File(pngPath);
+    private void createFolders() {
+        createFolder(tempFolderString);
+        createFolder(tempFolderString + "result");
     }
 
+    private void createFolder(String tempFolderString) {
+        File tempFolder = new File(tempFolderString);
+        if (!tempFolder.exists()) {
+            tempFolder.mkdir();
+        }
+    }
 
+    private File convertDocxToImages(String docxFileName, String pdfFileName, String imagesFolderName) throws IOException {
+        File srcFile = new File(srcFolderString + docxFileName);
+        File pdfFile = new File(tempFolderString + pdfFileName);
+        convertDocxToPdf(srcFile, pdfFile);
 
-    public File convertDocxToPdf(String docPath, String pdfPath) throws IOException {
+        File folderWithImages = new File(tempFolderString + imagesFolderName);
+        fillFolderWithImagesFromPdf(pdfFile, folderWithImages);
+        return folderWithImages;
+    }
+
+    public void convertDocxToPdf(File docPath, File pdfPath) throws IOException {
         InputStream doc = new FileInputStream(docPath);
         XWPFDocument document = new XWPFDocument(doc);
         PdfOptions options = PdfOptions.create();
         OutputStream out = new FileOutputStream(pdfPath);
         PdfConverter.getInstance().convert(document, out, options);
+    }
 
-        return new File(pdfPath);
+    private void fillFolderWithImagesFromPdf(File docPath, File pngPath) throws IOException {
+        PDDocument document = PDDocument.load(docPath);
+        PDFRenderer renderer = new PDFRenderer(document);
+
+        if (!pngPath.exists()) {
+            pngPath.mkdir();
+        }
+
+        for (int page = 0; page < document.getNumberOfPages(); ++page) {
+            BufferedImage bi = renderer.renderImageWithDPI(page, 300);
+            ImageIO.write(bi, "JPEG", new File(pngPath + "/" + page + ".png"));
+        }
+    }
+
+    public void getDifferenceImages(File firstFolderWithImages, File secondFolderWithImages) throws IOException {
+        File[] firstFolderImages = firstFolderWithImages.listFiles();
+        File[] secondFolderImages = secondFolderWithImages.listFiles();
+
+        if (firstFolderImages.length != secondFolderImages.length) {
+            throw new RuntimeException();
+        }
+
+        Comparator<File> comparator = Comparator.comparingInt(o -> Integer.parseInt(o.getName().split("\\.png")[0]));
+
+        Arrays.sort(firstFolderImages, comparator);
+        Arrays.sort(secondFolderImages, comparator);
+
+        for (int i = 0; i < firstFolderImages.length; i++) {
+            DifferenceBufferedImage differenceImage = getDifferenceImage(
+                    ImageIO.read(firstFolderImages[i]),
+                    ImageIO.read(secondFolderImages[i])
+            );
+
+            writeImage(differenceImage.getBufferedImage(), i + "_diff_" + differenceImage.getDifferencePixels());
+        }
     }
 
     public void writeImage(BufferedImage image, String name) throws IOException {
         ImageIO.write(
                 image,
                 "png",
-                new File("target/" + name + ".png"));
+                new File(tempFolderString + "result/" + name + ".png"));
     }
 
-    public void getDifferenceImages(File firstFolderWithImages, File secondFolderWithImages) throws IOException {
+    public DifferenceBufferedImage getDifferenceImage(BufferedImage img1, BufferedImage img2) {
+        int width = img1.getWidth();
+        int height = img1.getHeight();
+        int highlight = Color.MAGENTA.getRGB();
+        int[] p1 = img1.getRGB(0, 0, width, height, null, 0, width);
+        int[] p2 = img2.getRGB(0, 0, width, height, null, 0, width);
 
-        if (firstFolderWithImages.listFiles().length != secondFolderWithImages.listFiles().length) {
-            throw new RuntimeException();
-        }
-
-        for (int i = 0; i < firstFolderWithImages.listFiles().length; i++) {
-            writeImage(getDifferenceImage(ImageIO.read(firstFolderWithImages.listFiles()[i]),
-                    ImageIO.read(secondFolderWithImages.listFiles()[i])),
-                    "diff" + i);
-        }
-    }
-
-    public BufferedImage getDifferenceImage(BufferedImage img1, BufferedImage img2) {
-        final int w = img1.getWidth(),
-                h = img1.getHeight(),
-                highlight = Color.MAGENTA.getRGB();
-        final int[] p1 = img1.getRGB(0, 0, w, h, null, 0, w);
-        final int[] p2 = img2.getRGB(0, 0, w, h, null, 0, w);
-
+        int counter = 0;
         for (int i = 0; i < p1.length; i++) {
             if (p1[i] != p2[i]) {
                 counter++;
@@ -99,8 +126,8 @@ public class DocxDiffFinderApplication implements CommandLineRunner {
             }
         }
 
-        final BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        out.setRGB(0, 0, w, h, p1, 0, w);
-        return out;
+        final BufferedImage out = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        out.setRGB(0, 0, width, height, p1, 0, width);
+        return new DifferenceBufferedImage(out, counter);
     }
 }

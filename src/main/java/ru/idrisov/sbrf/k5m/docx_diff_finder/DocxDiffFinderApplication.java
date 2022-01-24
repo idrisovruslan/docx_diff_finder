@@ -1,20 +1,13 @@
 package ru.idrisov.sbrf.k5m.docx_diff_finder;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.xmlgraphics.image.loader.impl.imageio.ImageIOUtil;
-import org.docx4j.Docx4J;
-import org.docx4j.convert.out.FOSettings;
-import org.docx4j.openpackaging.exceptions.Docx4JException;
-import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.apache.poi.xwpf.converter.pdf.PdfConverter;
 import org.apache.poi.xwpf.converter.pdf.PdfOptions;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
-
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -23,6 +16,8 @@ import java.io.*;
 
 @SpringBootApplication
 public class DocxDiffFinderApplication implements CommandLineRunner {
+
+    public Integer counter = 0;
 
     public static void main(String[] args) {
         SpringApplication.run(DocxDiffFinderApplication.class, args);
@@ -34,20 +29,26 @@ public class DocxDiffFinderApplication implements CommandLineRunner {
         File pdf1 = convertDocxToPdf("src/main/resources/src1.docx", "target/pdf1.pdf");
         File pdf2 = convertDocxToPdf("src/main/resources/src2.docx", "target/pdf2.pdf");
 
-        File img1 = convertPdfToPng("target/pdf1.pdf", "target/img1.png");
-        File img2 = convertPdfToPng("target/pdf2.pdf", "target/img2.png");
+        File img1 = convertPdfToPng(pdf1, "target/firstFile");
+        File img2 = convertPdfToPng(pdf2, "target/secondFile");
 
-        writeImage(getDifferenceImage(
-                ImageIO.read(new File("target/img1.png")),
-                ImageIO.read(new File("target/img2.png")))
-        );
+        getDifferenceImages(img1, img2);
+
+        System.out.println(counter);
     }
 
-    private File convertPdfToPng(String docPath, String pngPath) throws IOException {
-        PDDocument pd = PDDocument.load (new File (docPath));
-        PDFRenderer pr = new PDFRenderer (pd);
-        BufferedImage bi = pr.renderImageWithDPI (0, 300);
-        ImageIO.write (bi, "JPEG", new File (pngPath));
+    private File convertPdfToPng(File docPath, String pngPath) throws IOException {
+        PDDocument pd = PDDocument.load(docPath);
+        PDFRenderer pr = new PDFRenderer(pd);
+
+        if (!(new File(pngPath).exists())) {
+            new File(pngPath).mkdir();
+        }
+
+        for (int page = 0; page < pd.getNumberOfPages(); ++page) {
+            BufferedImage bi = pr.renderImageWithDPI(page, 300);
+            ImageIO.write (bi, "JPEG", new File(pngPath + "/" + page + ".png"));
+        }
 
         return new File(pngPath);
     }
@@ -64,11 +65,24 @@ public class DocxDiffFinderApplication implements CommandLineRunner {
         return new File(pdfPath);
     }
 
-    public void writeImage(BufferedImage image) throws IOException {
+    public void writeImage(BufferedImage image, String name) throws IOException {
         ImageIO.write(
                 image,
                 "png",
-                new File("target/diff.png"));
+                new File("target/" + name + ".png"));
+    }
+
+    public void getDifferenceImages(File firstFolderWithImages, File secondFolderWithImages) throws IOException {
+
+        if (firstFolderWithImages.listFiles().length != secondFolderWithImages.listFiles().length) {
+            throw new RuntimeException();
+        }
+
+        for (int i = 0; i < firstFolderWithImages.listFiles().length; i++) {
+            writeImage(getDifferenceImage(ImageIO.read(firstFolderWithImages.listFiles()[i]),
+                    ImageIO.read(secondFolderWithImages.listFiles()[i])),
+                    "diff" + i);
+        }
     }
 
     public BufferedImage getDifferenceImage(BufferedImage img1, BufferedImage img2) {
@@ -80,6 +94,7 @@ public class DocxDiffFinderApplication implements CommandLineRunner {
 
         for (int i = 0; i < p1.length; i++) {
             if (p1[i] != p2[i]) {
+                counter++;
                 p1[i] = highlight;
             }
         }

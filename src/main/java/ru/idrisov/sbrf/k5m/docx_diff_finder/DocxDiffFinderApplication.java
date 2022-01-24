@@ -1,5 +1,9 @@
 package ru.idrisov.sbrf.k5m.docx_diff_finder;
 
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.xmlgraphics.image.loader.impl.imageio.ImageIOUtil;
 import org.docx4j.Docx4J;
 import org.docx4j.convert.out.FOSettings;
 import org.docx4j.openpackaging.exceptions.Docx4JException;
@@ -7,6 +11,10 @@ import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.apache.poi.xwpf.converter.pdf.PdfConverter;
+import org.apache.poi.xwpf.converter.pdf.PdfOptions;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -22,30 +30,38 @@ public class DocxDiffFinderApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        File theFile = new File("src/main/resources/src1.docx");
-        System.out.println(theFile.getAbsolutePath());
 
-        File img1 = convertToPngFromDocx("src/main/resources/src1.docx", "target/img1.png");
-        File img2 = convertToPngFromDocx("src/main/resources/src2.docx", "target/img2.png");
+        File pdf1 = convertDocxToPdf("src/main/resources/src1.docx", "target/pdf1.pdf");
+        File pdf2 = convertDocxToPdf("src/main/resources/src2.docx", "target/pdf2.pdf");
 
-//        writeImage(getDifferenceImage(
-//                ImageIO.read(new File("target/img1.png")),
-//                ImageIO.read(new File("target/img2.png")))
-//        );
+        File img1 = convertPdfToPng("target/pdf1.pdf", "target/img1.png");
+        File img2 = convertPdfToPng("target/pdf2.pdf", "target/img2.png");
+
+        writeImage(getDifferenceImage(
+                ImageIO.read(new File("target/img1.png")),
+                ImageIO.read(new File("target/img2.png")))
+        );
     }
 
-    private File convertToPngFromDocx(String inPath, String outPath) throws IOException, Docx4JException {
-        File theFile = new File(inPath);
-        File outfile=new File(outPath);
-        WordprocessingMLPackage wordMLPckg = Docx4J.load(theFile);
-        OutputStream os = new FileOutputStream(outfile);
-        FOSettings settings = Docx4J.createFOSettings();
-        settings.setWmlPackage(wordMLPckg);
-        settings.setApacheFopMime("images/png");
-        Docx4J.toFO(settings, os, Docx4J.FLAG_EXPORT_PREFER_XSL);
-        os.close();
+    private File convertPdfToPng(String docPath, String pngPath) throws IOException {
+        PDDocument pd = PDDocument.load (new File (docPath));
+        PDFRenderer pr = new PDFRenderer (pd);
+        BufferedImage bi = pr.renderImageWithDPI (0, 300);
+        ImageIO.write (bi, "JPEG", new File (pngPath));
 
-        return outfile;
+        return new File(pngPath);
+    }
+
+
+
+    public File convertDocxToPdf(String docPath, String pdfPath) throws IOException {
+        InputStream doc = new FileInputStream(docPath);
+        XWPFDocument document = new XWPFDocument(doc);
+        PdfOptions options = PdfOptions.create();
+        OutputStream out = new FileOutputStream(pdfPath);
+        PdfConverter.getInstance().convert(document, out, options);
+
+        return new File(pdfPath);
     }
 
     public void writeImage(BufferedImage image) throws IOException {
